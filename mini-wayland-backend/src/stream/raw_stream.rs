@@ -4,7 +4,7 @@ use crate::stream::read_buffer::ReadBuffer;
 use rustix::io::retry_on_intr;
 use rustix::net::{RecvFlags, SendFlags, recvmsg, send, sendmsg};
 use std::io::{IoSlice, IoSliceMut};
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::net::UnixStream;
 
 // TODO: bikeshed
@@ -14,8 +14,15 @@ pub struct RawStream {
 
 impl RawStream {
     #[inline]
-    pub fn new(stream: UnixStream) -> RawStream {
+    pub fn wrap(stream: UnixStream) -> RawStream {
         RawStream { inner: stream }
+    }
+
+    pub fn connect_to_display_server() -> std::io::Result<RawStream> {
+        // TODO: other things to set up on this socket maybe?
+        let stream = UnixStream::connect("/run/user/1000/wayland-0")?;
+
+        Ok(Self::wrap(stream))
     }
 
     pub fn read(
@@ -80,5 +87,12 @@ impl RawStream {
         *data = data.get(0..sent_bytes).unwrap_or(&[]);
 
         Ok(())
+    }
+}
+
+impl AsFd for RawStream {
+    #[inline]
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
     }
 }

@@ -1,14 +1,31 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use crate::proxy_thread::start_proxy_thread;
+use mini_wayland_backend::executor::RawWaylandExecutor;
+use mini_wayland_backend::server::RawServer;
+use mini_wayland_backend::stream::RawStream;
+use std::os::unix::net::{UnixListener, UnixStream};
+
+mod proxy_thread;
+
+pub struct WaybedProxy {
+    pub wayland_socket: UnixStream,
+    // TODO: expose path for clients to connect to.
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl WaybedProxy {
+    pub fn create() -> Self {
+        let executor = RawWaylandExecutor::new().unwrap();
+        // TODO: unwrap
+        let (a, b) = UnixStream::pair().unwrap();
+        // TODO: unwrap
+        let connect = RawStream::connect_to_display_server().unwrap();
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        let server = RawServer::bind().unwrap();
+
+        // We have set up everything now, everything that could fail has either gone through or failed.
+        // We can set up the proxy thread now.
+
+        start_proxy_thread(connect, RawStream::wrap(b), server, executor);
+
+        WaybedProxy { wayland_socket: a }
     }
 }

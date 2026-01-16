@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+mini-wayland-backend = { path = "./mini-wayland-backend" }
 
+[dev-dependencies]
+wayland-client = "0.31.12"
 
 [workspace]
 resolver = "2"
