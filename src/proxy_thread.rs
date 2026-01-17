@@ -23,14 +23,19 @@ pub fn start_proxy_thread(
             },
         );
 
+        executor.wrap_stream(wayland_conn, MyHandler::MainConnection {});
+
         let _server_socket = WaylandServer::wrap(&executor, server, MyServerHandler {});
 
         executor.run_until(|| !closed.get()).unwrap();
+
+        println!("Thread done");
     });
 }
 
 enum MyHandler {
     Master { closed: Rc<Cell<bool>> },
+    MainConnection {},
 }
 
 impl MessageHandler for MyHandler {
@@ -38,10 +43,14 @@ impl MessageHandler for MyHandler {
         todo!()
     }
 
-    async fn closed(self) {
+    fn closed(self) -> Option<impl Future<Output = ()>> {
         match self {
             MyHandler::Master { closed } => closed.set(true),
-        }
+            _ => return None,
+        };
+
+        // Needed to actually have a return type for this closure
+        if false { Some(async {}) } else { None }
     }
 }
 

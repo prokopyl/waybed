@@ -7,4 +7,3 @@ pub mod futures;
 pub mod message;
 pub mod server;
 pub mod stream;
-pub mod task;
