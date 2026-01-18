@@ -20,7 +20,7 @@ impl WaylandStream {
 
 pub trait MessageHandler {
     async fn handle_message(&self) -> Result<(), FatalStreamError>;
-    fn closed(self) -> Option<impl Future<Output = ()> + 'static>;
+    fn closed(self) -> impl Future<Output = ()> + 'static;
 }
 
 /// A Fatal error has occured somewhere in the wire protocol.

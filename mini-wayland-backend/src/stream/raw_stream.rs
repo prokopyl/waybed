@@ -4,7 +4,7 @@ use crate::stream::read_buffer::ReadBuffer;
 use rustix::io::retry_on_intr;
 use rustix::net::{RecvFlags, SendFlags, recvmsg, send, sendmsg};
 use std::io::{IoSlice, IoSliceMut};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::net::UnixStream;
 
 // TODO: bikeshed
@@ -40,14 +40,7 @@ impl RawStream {
             // effectively rendering that File Descriptor private to this process only.
             RecvFlags::CMSG_CLOEXEC;
 
-        let iov: &mut [IoSliceMut] = {
-            let (s1, s2) = read_buffer.as_mut_slices();
-            if s2.is_empty() {
-                &mut [IoSliceMut::new(s1)]
-            } else {
-                &mut [IoSliceMut::new(s1), IoSliceMut::new(s2)]
-            }
-        };
+        let iov = &mut [IoSliceMut::new(read_buffer.as_slice_for_writing())];
 
         let mut control = ancillary_buffer.as_rcv_buffer();
 
@@ -55,7 +48,7 @@ impl RawStream {
         let msg = retry_on_intr(|| recvmsg(&self.inner, iov, &mut control, flags))?;
         // TODO: check msg flags
 
-        read_buffer.add_new_read_bytes(msg.bytes);
+        read_buffer.forward_write_head_by(msg.bytes);
         fd_buffer.drain_from(control);
 
         Ok(())

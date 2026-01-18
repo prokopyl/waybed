@@ -6,6 +6,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 
+#[derive(Clone)]
 pub struct TaskHandle {
     inner: Pin<Rc<RefCell<dyn Task>>>,
     waker: Waker,

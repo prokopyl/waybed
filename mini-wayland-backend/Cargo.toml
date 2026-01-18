@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 rustix = { version = "1.1.3", default-features = false, features = ["event", "net", "std"] }
 slotmap = "1.1.1"
+ringbuf = "0.4.8"
+oneringbuf = { version = "0.7.0", features = ["vmem"] }

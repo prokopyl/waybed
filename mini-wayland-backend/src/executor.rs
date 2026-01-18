@@ -109,14 +109,16 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
                     }
 
                     if let Some(handler) = self.handlers.remove(socket_key) {
-                        if let Some(fut) = handler.closed() {
-                            self.tasks.spawn(fut);
-                        }
+                        self.spawn(handler.closed());
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn spawn(&self, future: impl Future<Output = ()> + 'static) -> TaskId {
+        self.tasks.spawn(future, Rc::clone(&self.task_manager))
     }
 }

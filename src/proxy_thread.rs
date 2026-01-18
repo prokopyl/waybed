@@ -43,14 +43,11 @@ impl MessageHandler for MyHandler {
         todo!()
     }
 
-    fn closed(self) -> Option<impl Future<Output = ()>> {
+    async fn closed(self) {
         match self {
             MyHandler::Master { closed } => closed.set(true),
-            _ => return None,
+            _ => {}
         };
-
-        // Needed to actually have a return type for this closure
-        if false { Some(async {}) } else { None }
     }
 }
 
