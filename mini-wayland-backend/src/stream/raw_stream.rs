@@ -1,7 +1,7 @@
 use crate::stream::ancillary_buffer::AncillaryBuffer;
 use crate::stream::fd_buffer::FdBuffer;
 use crate::stream::read_buffer::ReadBuffer;
-use rustix::io::retry_on_intr;
+use rustix::io::{Errno, retry_on_intr};
 use rustix::net::{RecvFlags, SendFlags, recvmsg, send, sendmsg};
 use std::io::{IoSlice, IoSliceMut};
 use std::os::fd::{AsFd, BorrowedFd};
@@ -13,6 +13,7 @@ pub struct RawStream {
 }
 
 impl RawStream {
+    // TODO: protect against invalid FDs
     #[inline]
     pub fn wrap(stream: UnixStream) -> RawStream {
         RawStream { inner: stream }
@@ -30,7 +31,7 @@ impl RawStream {
         read_buffer: &mut ReadBuffer,
         fd_buffer: &mut FdBuffer,
         ancillary_buffer: &mut AncillaryBuffer,
-    ) -> rustix::io::Result<()> {
+    ) -> Result<(), RawStreamReadResult> {
         let flags =
             // Do not block the thread if the read operation would block for any reason.
             RecvFlags::DONTWAIT |
@@ -40,16 +41,22 @@ impl RawStream {
             // effectively rendering that File Descriptor private to this process only.
             RecvFlags::CMSG_CLOEXEC;
 
-        let iov = &mut [IoSliceMut::new(read_buffer.as_slice_for_writing())];
+        while read_buffer.has_space_remaining() {
+            let iov = &mut [IoSliceMut::new(read_buffer.as_slice_for_writing())];
 
-        let mut control = ancillary_buffer.as_rcv_buffer();
+            let mut control = ancillary_buffer.as_rcv_buffer();
 
-        // TODO: better handling of INTR?
-        let msg = retry_on_intr(|| recvmsg(&self.inner, iov, &mut control, flags))?;
-        // TODO: check msg flags
+            // TODO: better handling of INTR?
+            let msg = retry_on_intr(|| recvmsg(&self.inner, iov, &mut control, flags))?;
+            // TODO: check msg flags
+            fd_buffer.drain_from(control);
 
-        read_buffer.forward_write_head_by(msg.bytes);
-        fd_buffer.drain_from(control);
+            if msg.bytes == 0 {
+                return Err(RawStreamReadResult::Eof);
+            }
+
+            read_buffer.forward_write_head_by(msg.bytes);
+        }
 
         Ok(())
     }
@@ -88,4 +95,29 @@ impl AsFd for RawStream {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
+}
+
+pub enum RawStreamReadResult {
+    WouldBlock,
+    Eof,
+}
+
+impl From<Errno> for RawStreamReadResult {
+    fn from(value: Errno) -> Self {
+        if value == Errno::AGAIN || value == Errno::WOULDBLOCK {
+            Self::WouldBlock
+        } else {
+            invalid_errno(value, "recvmsg");
+        }
+    }
+}
+
+#[cold]
+fn unreachable(msg: &'static str) -> ! {
+    unreachable!("{msg}")
+}
+
+#[cold]
+fn invalid_errno(errno: Errno, call: &'static str) -> ! {
+    unreachable!("Got unsupported Errno for '{call}': {errno:?}")
 }

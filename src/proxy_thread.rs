@@ -39,12 +39,12 @@ enum MyHandler {
 }
 
 impl MessageHandler for MyHandler {
-    async fn handle_message(&self) -> Result<(), FatalStreamError> {
-        todo!()
+    async fn handle_message(self: Rc<Self>, buf: Box<[u8]>) {
+        println!("New message! {:?}", buf);
     }
 
-    async fn closed(self) {
-        match self {
+    async fn closed(self: Rc<Self>) {
+        match &*self {
             MyHandler::Master { closed } => closed.set(true),
             _ => {}
         };

@@ -17,6 +17,10 @@ impl FdBuffer {
         self.inner.push_back(fd);
     }
 
+    pub fn pop(&mut self) -> Option<OwnedFd> {
+        self.inner.pop_front()
+    }
+
     pub fn drain_from(&mut self, mut control: RecvAncillaryBuffer) {
         let received_fds = control
             .drain()
