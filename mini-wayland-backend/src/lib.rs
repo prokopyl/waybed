@@ -4,6 +4,8 @@ const _: () = { panic!("Only Linux is supported for now") };*/
 
 pub mod executor;
 pub mod futures;
-pub mod message;
 pub mod server;
 pub mod stream;
+
+pub mod types;
+pub use types::MessageWithHeader;

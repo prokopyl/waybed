@@ -32,8 +32,4 @@ impl FdBuffer {
 
         self.inner.extend(received_fds)
     }
-
-    pub fn extend(&mut self, fds: impl IntoIterator<Item = OwnedFd>) {
-        self.inner.extend(fds);
-    }
 }

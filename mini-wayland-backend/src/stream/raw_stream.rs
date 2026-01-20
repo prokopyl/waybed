@@ -63,30 +63,42 @@ impl RawStream {
 
     pub fn send(
         &self,
-        data: &mut &[u8],
+        mut data: &[u8],
         fds: &mut &[BorrowedFd<'_>],
         ancillary_buffer: &mut AncillaryBuffer,
-    ) -> rustix::io::Result<()> {
+    ) -> (usize, Result<(), RawStreamWriteResult>) {
         let flags =
             // Do not block the thread if the read operation would block for any reason.
             SendFlags::DONTWAIT |
             // No not trigger a SIGPIPE if the other end of the socket has been closed.
             SendFlags::NOSIGNAL;
 
-        let sent_bytes = if fds.is_empty() {
-            retry_on_intr(|| send(&self.inner, data, flags))?
-        } else {
-            let iov = [IoSlice::new(data)];
-            let mut control = ancillary_buffer.fill_to_send_and_shrink_remaining(fds);
+        let mut total_sent_bytes = 0;
 
-            retry_on_intr(|| sendmsg(&self.inner, &iov, &mut control, flags))?
-        };
+        while !data.is_empty() {
+            let sent_bytes = if fds.is_empty() {
+                retry_on_intr(|| send(&self.inner, data, flags))
+            } else {
+                let iov = [IoSlice::new(data)];
+                let mut control = ancillary_buffer.fill_to_send_and_shrink_remaining(fds);
 
-        // Shrink the slice by however many bytes were actually sent over the socket.
-        // If for some reason sent > data.len() (??), then assume everything was sent.
-        *data = data.get(0..sent_bytes).unwrap_or(&[]);
+                retry_on_intr(|| sendmsg(&self.inner, &iov, &mut control, flags))
+            };
 
-        Ok(())
+            dbg!(sent_bytes);
+
+            let sent_bytes = match sent_bytes {
+                Ok(bytes) => bytes,
+                Err(e) => return (total_sent_bytes, Err(e.into())),
+            };
+
+            // Shrink the slice by however many bytes were actually sent over the socket.
+            // If for some reason sent > data.len() (??), then assume everything was sent.
+            data = data.get(sent_bytes..).unwrap_or(&[]);
+            total_sent_bytes += sent_bytes;
+        }
+
+        (total_sent_bytes, Ok(()))
     }
 }
 
@@ -120,4 +132,19 @@ fn unreachable(msg: &'static str) -> ! {
 #[cold]
 fn invalid_errno(errno: Errno, call: &'static str) -> ! {
     unreachable!("Got unsupported Errno for '{call}': {errno:?}")
+}
+
+pub enum RawStreamWriteResult {
+    WouldBlock,
+    Disconnected,
+}
+
+impl From<Errno> for RawStreamWriteResult {
+    fn from(value: Errno) -> Self {
+        if value == Errno::AGAIN || value == Errno::WOULDBLOCK {
+            Self::WouldBlock
+        } else {
+            invalid_errno(value, "sendmsg");
+        }
+    }
 }

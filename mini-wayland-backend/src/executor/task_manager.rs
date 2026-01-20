@@ -16,6 +16,7 @@ impl TaskManager {
     pub fn wake(&self, task_id: TaskId) {
         let Ok(mut tasks) = self.tasks_to_wake.try_borrow_mut() else {
             // TODO?
+            todo!();
             return;
         };
 
@@ -23,10 +24,17 @@ impl TaskManager {
     }
 
     pub fn drain(&self, mut handler: impl FnMut(TaskId)) {
-        let mut tasks = self.tasks_to_wake.borrow_mut();
-
-        for (task_id, _) in tasks.drain() {
+        while let Some(task_id) = self.pop_task() {
             handler(task_id)
         }
+    }
+
+    fn pop_task(&self) -> Option<TaskId> {
+        let mut tasks = self.tasks_to_wake.borrow_mut();
+        let mut drain = tasks.drain();
+        let task_id = drain.next();
+        core::mem::forget(drain);
+
+        task_id.map(|task_id| task_id.0)
     }
 }

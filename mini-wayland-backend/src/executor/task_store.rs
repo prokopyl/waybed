@@ -57,7 +57,7 @@ impl TaskStore {
         tasks.get(id).map(TaskHandle::clone)
     }
 
-    fn delete_task(&self, id: TaskId) {
+    pub fn delete_task(&self, id: TaskId) {
         let mut tasks = self.tasks.borrow_mut();
         tasks.remove(id);
     }

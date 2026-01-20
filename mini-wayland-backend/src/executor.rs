@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::rc::Rc;
+use std::task::Poll;
 
 pub mod task;
 mod task_manager;
@@ -35,7 +36,7 @@ impl RawWaylandExecutor {
     }
 
     pub(crate) fn register_socket(&self, socket: &RawStream, token: u64) -> rustix::io::Result<()> {
-        let listen_for = EventFlags::IN | EVENT_STREAM_CLOSED;
+        let listen_for = EventFlags::IN | EventFlags::OUT | EVENT_STREAM_CLOSED;
 
         // TODO: handle errors
         epoll::add(&self.epoll, socket, EventData::new_u64(token), listen_for)
@@ -67,7 +68,7 @@ new_key_type! {
 
 pub struct WaylandExecutor<H, SH> {
     inner: RawWaylandExecutor,
-    streams: SlotMap<WaylandStreamId, WaylandStream>,
+    streams: SlotMap<WaylandStreamId, Rc<WaylandStream>>,
     handlers: SecondaryMap<WaylandStreamId, Rc<H>>,
 
     tasks: TaskStore,
@@ -87,8 +88,9 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
         }
     }
 
-    pub fn wrap_stream(&mut self, raw: RawStream, handler: H) {
-        let key = self.streams.insert(WaylandStream::wrap(raw));
+    pub fn wrap_stream(&mut self, raw: RawStream, handler: H) -> Rc<WaylandStream> {
+        let stream = Rc::new(WaylandStream::wrap(raw));
+        let key = self.streams.insert(Rc::clone(&stream));
         let raw = &self.streams[key];
 
         // TODO: handle error
@@ -96,6 +98,8 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
             .register_socket(raw.stream(), key.0.as_ffi())
             .unwrap();
         self.handlers.insert(key, Rc::new(handler));
+
+        stream
     }
 
     pub fn run_until(&mut self, until: impl Fn() -> bool) -> rustix::io::Result<()> {
@@ -104,7 +108,7 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
         while until() {
             let events = self.inner.wait(&mut buf)?;
             for event in events {
-                dbg!(event.flags);
+                //dbg!(event.flags);
                 // Stuff to read from socket
                 if !event.flags.intersection(EventFlags::IN).is_empty() {
                     println!("Read available for {}!", event.data.u64());
@@ -120,9 +124,13 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
                     } else {
                         dbg!("missing socket");
                     }
+                }
 
-                    if let Some(handler) = self.handlers.remove(socket_key) {
-                        self.spawn(handler.closed());
+                if !event.flags.intersection(EventFlags::OUT).is_empty() {
+                    let socket_key = WaylandStreamId::from(KeyData::from_ffi(event.data.u64()));
+
+                    if let Some(socket) = self.streams.get(socket_key) {
+                        socket.dispatch_send_wakers();
                     }
                 }
 
@@ -141,6 +149,13 @@ impl<H: MessageHandler, SH> WaylandExecutor<H, SH> {
                     }
                 }
             }
+
+            // Poll all tasks
+            self.task_manager.drain(|id| {
+                if let Poll::Ready(()) = self.tasks.poll(id) {
+                    self.tasks.delete_task(id)
+                }
+            });
         }
 
         Ok(())
