@@ -9,3 +9,5 @@ pub mod stream;
 
 pub mod types;
 pub use types::MessageWithHeader;
+
+pub mod registry;
