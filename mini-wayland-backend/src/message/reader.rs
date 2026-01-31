@@ -29,6 +29,13 @@ impl<'a> Reader<'a> {
         ObjectId::new(raw_id)
     }
 
+    fn align_to_next_u32(&mut self) {
+        let modulo = self.position % 4;
+        if modulo != 0 {
+            self.position += 4 - modulo;
+        }
+    }
+
     pub fn read_str(&mut self) -> Option<String> {
         let len = self.read_uint() as usize; // TODO: do not update position if read fails?
 
@@ -39,7 +46,7 @@ impl<'a> Reader<'a> {
         let str_buf = &self.buf[self.position..self.position + len];
 
         self.position += len;
-        self.position += self.position % 4;
+        self.align_to_next_u32();
 
         let null_terminated_str = CStr::from_bytes_with_nul(str_buf).unwrap();
 
