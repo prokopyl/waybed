@@ -1,5 +1,6 @@
 use mini_wayland_backend::MessageWithHeader;
 use mini_wayland_backend::executor::{RawWaylandExecutor, WaylandExecutor};
+use mini_wayland_backend::message::Message;
 use mini_wayland_backend::server::{RawServer, ServerHandler, WaylandServer};
 use mini_wayland_backend::stream::{MessageHandler, RawStream, Serializable, Serializer};
 use std::cell::Cell;
@@ -53,8 +54,8 @@ enum MyHandler {
 }
 
 impl MessageHandler for MyHandler {
-    async fn handle_message(self: Rc<Self>, buf: Box<[u8]>) {
-        println!("New message! {:?}", buf);
+    async fn handle_message(self: Rc<Self>, msg: Message) {
+        println!("New message! {:?}", msg);
     }
 
     async fn closed(self: Rc<Self>) {

@@ -12,6 +12,8 @@ mod send_buffer;
 
 use crate::MessageWithHeader;
 use crate::executor::WaylandExecutor;
+use crate::message::Message;
+use crate::registry::Registry;
 use crate::stream::ancillary_buffer::AncillaryBuffer;
 use crate::stream::fd_buffer::FdBuffer;
 use crate::stream::raw_stream::RawStreamWriteResult;
@@ -28,6 +30,7 @@ pub struct WaylandStream {
     ancillary_buffer: RefCell<AncillaryBuffer>,
 
     wakers: RefCell<Vec<Waker>>,
+    registry: Registry,
 }
 
 impl WaylandStream {
@@ -38,6 +41,7 @@ impl WaylandStream {
             send_bufs: RefCell::new(SendBuffer::new(4096)),
             ancillary_buffer: RefCell::new(AncillaryBuffer::new()),
             wakers: RefCell::new(Vec::with_capacity(8)),
+            registry: Registry::new(),
         }
     }
 
@@ -55,6 +59,10 @@ impl WaylandStream {
 
     pub fn flush(&self) -> FlushFuture<'_> {
         FlushFuture { stream: self }
+    }
+
+    pub fn registry(&self) -> &Registry {
+        &self.registry
     }
 
     fn append_to_buf(&self, msg: &MessageWithHeader<impl Serializable>, offset: usize) -> usize {
@@ -120,27 +128,27 @@ impl WaylandStream {
         }
     }
 
-    fn next_message(&self) -> Option<Box<[u8]>> {
+    fn next_message(&self) -> Option<Message> {
         let mut read_bufs = self.read_bufs.borrow_mut();
-        let (read_buf, fd_buf) = &mut *read_bufs;
-        let slice = read_buf.unread();
-        let header_chunk = slice.as_chunks::<8>().0.first()?;
-
         // TODO: handle FDs
-        let header = RawMessageHeader::parse(header_chunk);
 
-        let msg_data = slice.get(0..header.msg_len as usize)?;
+        let (read_buf, fd_buf) = &mut *read_bufs;
 
-        let msg = msg_data.to_vec().into_boxed_slice();
+        let (header, remaining) = read_buf.unread().split_at_checked(8)?;
+        let header = RawMessageHeader::parse(header.as_array()?);
+        let msg_data_len = header.msg_len.checked_sub(8).unwrap().into(); // TODO: panic
+        let msg_data = remaining.get(..msg_data_len)?;
 
-        read_buf.forward_read_head_by(msg.len());
+        let msg = Message::parse(header, msg_data, &self.registry); // TODO: panics
+
+        read_buf.forward_read_head_by(header.msg_len.into());
 
         Some(msg)
     }
 }
 
 pub trait MessageHandler {
-    fn handle_message(self: Rc<Self>, buf: Box<[u8]>) -> impl Future<Output = ()> + 'static;
+    fn handle_message(self: Rc<Self>, msg: Message) -> impl Future<Output = ()> + 'static;
     fn closed(self: Rc<Self>) -> impl Future<Output = ()> + 'static;
 }
 
@@ -148,6 +156,7 @@ pub trait MessageHandler {
 /// All further communications on this socket are compromised, and the socket will now be closed.
 pub struct FatalStreamError;
 
+#[derive(Copy, Clone, Debug)]
 pub struct RawMessageHeader {
     pub object_id: u32,
     pub opcode: u16,
