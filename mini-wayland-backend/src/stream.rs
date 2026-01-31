@@ -77,6 +77,7 @@ impl WaylandStream {
         }
 
         let data = send_bufs.to_send();
+        dbg!(data);
         let mut ancillary_buffer = self.ancillary_buffer.borrow_mut();
         let (sent_bytes, res) = self.inner.send(data, &mut &[][..], &mut ancillary_buffer);
 

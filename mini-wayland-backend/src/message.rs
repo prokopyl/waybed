@@ -22,6 +22,9 @@ impl Message {
             ObjectType::WlDisplay => {
                 MessageContents::WlDisplay(WlDisplayMessage::parse(header, data).unwrap())
             }
+            ObjectType::WlRegistry => {
+                MessageContents::WlRegistry(WlRegistryMessage::parse(header, data).unwrap())
+            }
         };
 
         Message {
@@ -34,6 +37,7 @@ impl Message {
 #[derive(Debug, Clone)]
 pub enum MessageContents {
     WlDisplay(WlDisplayMessage),
+    WlRegistry(WlRegistryMessage),
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +67,37 @@ impl WlDisplayEventError {
             object_id: reader.read_object_id(),
             error_code: reader.read_uint(),
             message: reader.read_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum WlRegistryMessage {
+    Global(WlRegistryEventGlobal),
+}
+
+impl WlRegistryMessage {
+    pub fn parse(header: RawMessageHeader, data: &[u8]) -> Option<Self> {
+        Some(match header.opcode {
+            0 => Self::Global(WlRegistryEventGlobal::parse(Reader::new(data))),
+            c => todo!("Unsupported opcode: {}", c),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WlRegistryEventGlobal {
+    name: ObjectId,
+    interface: String,
+    version: u32,
+}
+
+impl WlRegistryEventGlobal {
+    pub fn parse(mut reader: Reader) -> Self {
+        Self {
+            name: reader.read_object_id().unwrap(),
+            interface: reader.read_str().unwrap(),
+            version: reader.read_uint(),
         }
     }
 }

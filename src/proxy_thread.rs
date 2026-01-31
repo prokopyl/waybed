@@ -1,6 +1,7 @@
 use mini_wayland_backend::MessageWithHeader;
 use mini_wayland_backend::executor::{RawWaylandExecutor, WaylandExecutor};
 use mini_wayland_backend::message::Message;
+use mini_wayland_backend::registry::object_type::ObjectType;
 use mini_wayland_backend::server::{RawServer, ServerHandler, WaylandServer};
 use mini_wayland_backend::stream::{MessageHandler, RawStream, Serializable, Serializer};
 use std::cell::Cell;
@@ -28,10 +29,14 @@ pub fn start_proxy_thread(
         let wayland_conn = executor.wrap_stream(wayland_conn, MyHandler::MainConnection {});
 
         executor.spawn(async move {
+            let new_id = wayland_conn.registry().register_new(ObjectType::WlRegistry);
+            dbg!(new_id);
             wayland_conn
                 .send_message(&MessageWithHeader {
                     target_id: 1,
-                    event: GetRegistry { new_id: 42 },
+                    event: GetRegistry {
+                        new_id: new_id.into(),
+                    },
                 })
                 .await
                 .unwrap();
